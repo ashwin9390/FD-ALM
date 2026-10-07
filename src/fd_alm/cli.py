@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from . import __version__
+from . import __title__, __version__
 from .codeowners import load_codeowners
 from .gatekeeper import check, has_errors
 from .metrics import load_samples, summarize
@@ -40,7 +40,10 @@ def _cmd_metrics(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="fd-alm", description="Framework-Driven Agent Lifecycle Management")
+    parser = argparse.ArgumentParser(
+        prog="fd-alm",
+        description=f"{__title__}: Framework-Driven Agent Lifecycle Management",
+    )
     parser.add_argument("--version", action="version", version=__version__)
     sub = parser.add_subparsers(dest="command", required=True)
 
