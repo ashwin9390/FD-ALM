@@ -54,6 +54,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install fd-alm   # or: pip install git+https://github.com/ashwin9390/fd-alm
+      - run: pip install git+https://github.com/ashwin9390/FD-ALM
       - run: fd-alm check registry.yaml --codeowners .github/CODEOWNERS
 ```
