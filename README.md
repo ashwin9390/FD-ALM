@@ -92,6 +92,4 @@ If you run agents, MCP servers or skills at scale, which control would you try f
 
 Copyright 2026 Ashwin H ([github.com/ashwin9390](https://github.com/ashwin9390)). See [NOTICE](NOTICE).
 
-## Citation
 
-Ashwin H. *FD-ALM: Framework-Driven Agent Lifecycle Management*, v0.1, 2026. https://github.com/ashwin9390/fd-alm
