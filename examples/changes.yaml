@@ -1,0 +1,27 @@
+# Agent-authored changes waiting for human review.
+changes:
+  - id: PR-101
+    title: Bump lodash to 4.17.21
+    agent: agent-dependency-bump
+    urgent: false
+    lines_changed: 6
+  - id: PR-102
+    title: Split billing service into modules
+    agent: agent-refactor
+    urgent: true
+    lines_changed: 840
+  - id: PR-103
+    title: Refactor auth middleware
+    agent: agent-refactor
+    urgent: false
+    lines_changed: 210
+  - id: PR-104
+    title: Fix typo in review comment template
+    agent: agent-code-review
+    urgent: true
+    lines_changed: 2
+  - id: PR-105
+    title: Change from an unregistered script
+    agent: agent-unknown
+    urgent: false
+    lines_changed: 35

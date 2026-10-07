@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FD-ALM registry",
+  "type": "object",
+  "required": ["entries"],
+  "properties": {
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "name"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "enum": ["agent", "skill", "mcp_server"] },
+          "name": { "type": "string" },
+          "owner": { "type": "string" },
+          "path": { "type": "string" },
+          "purpose": { "type": "string" },
+          "risk": { "enum": ["clear", "complicated", "complex", "chaotic"] },
+          "priority": { "enum": ["must", "should", "could", "wont"] },
+          "state": { "enum": ["proposed", "approved", "active", "deprecated", "retired"] },
+          "permissions": { "type": "array", "items": { "type": "string" } },
+          "justification": { "type": "string" },
+          "approved_by": { "type": "string" },
+          "last_used": { "type": "string", "format": "date" }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

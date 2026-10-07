@@ -1,0 +1,63 @@
+# Example FD-ALM registry. Replace with your own agents, skills and MCP servers.
+entries:
+  - id: agent-code-review
+    kind: agent
+    name: Code review assistant
+    purpose: Suggest review comments on pull requests
+    owner: "@platform-team"
+    path: agents/code-review/
+    risk: complicated        # Cynefin: clear | complicated | complex | chaotic
+    priority: should         # MoSCoW: must | should | could | wont
+    state: active            # proposed | approved | active | deprecated | retired
+    permissions: ["read:repo", "comment:pull_request"]
+    last_used: 2026-09-30
+
+  - id: agent-dependency-bump
+    kind: agent
+    name: Dependency updater
+    purpose: Open pull requests that update dependencies
+    owner: "@platform-team"
+    path: agents/dependency-bump/
+    risk: clear
+    priority: could
+    state: active
+    permissions: ["read:repo", "write:branch"]
+    last_used: 2026-10-01
+
+  - id: agent-refactor
+    kind: agent
+    name: Refactoring agent
+    purpose: Propose multi-file refactors
+    owner: "@backend-team"
+    path: agents/refactor/
+    risk: complex
+    priority: should
+    state: active
+    approved_by: "@jane-doe"   # complex risk needs a named human approver
+    permissions: ["read:repo", "write:branch"]
+    last_used: 2026-09-28
+
+  - id: mcp-issue-tracker
+    kind: mcp_server
+    name: Issue tracker MCP server
+    purpose: Lets agents read and update tickets
+    owner: "@platform-team"
+    path: mcp/issue-tracker/
+    risk: complicated
+    priority: should
+    state: active
+    permissions: ["tickets:*"]
+    justification: Agents must read, create and transition tickets across projects.
+    last_used: 2026-10-02
+
+  - id: skill-release-notes
+    kind: skill
+    name: Release notes skill
+    purpose: Draft release notes from merged pull requests
+    owner: "@docs-team"
+    path: skills/release-notes/
+    risk: clear
+    priority: could
+    state: active
+    permissions: ["read:repo"]
+    last_used: 2026-04-01     # stale: the gatekeeper warns and suggests deprecating

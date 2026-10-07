@@ -1,0 +1,6 @@
+# Example CODEOWNERS: the repository's ownership data supplies the RACI owners.
+/agents/code-review/      @platform-team
+/agents/dependency-bump/  @platform-team
+/agents/refactor/         @backend-team
+/mcp/issue-tracker/       @platform-team
+/skills/release-notes/    @docs-team
