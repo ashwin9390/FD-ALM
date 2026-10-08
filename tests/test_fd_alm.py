@@ -10,15 +10,36 @@ from fd_alm.triage import Change, triage
 
 TODAY = date(2026, 10, 7)
 
+KILL = {
+    "metric": "review_hours_per_change",
+    "threshold": 0.5,
+    "comparator": ">",
+    "window": 2,
+    "action": "deprecate",
+    "review_by": "2027-01-31",
+}
+
 
 def reg(*entries):
     return parse_registry({"entries": list(entries)})
 
 
 def entry(**overrides):
-    base = {"id": "a1", "kind": "agent", "name": "Agent", "owner": "@team", "state": "active"}
+    base = {
+        "id": "a1",
+        "kind": "agent",
+        "name": "Agent",
+        "creator": "@dev",
+        "owner": "@team",
+        "state": "active",
+        "kill_criterion": dict(KILL),
+    }
     base.update(overrides)
     return base
+
+
+def without(e, key):
+    return {k: v for k, v in e.items() if k != key}
 
 
 # registry -----------------------------------------------------------------------------------
@@ -92,6 +113,56 @@ def test_wont_priority_cannot_be_live():
 def test_stale_active_entry_warns_but_does_not_fail():
     findings = check(reg(entry(last_used="2026-01-01")), today=TODAY, max_idle_days=90)
     assert "P5-stale" in rules_of(findings) and not has_errors(findings)
+
+
+# ownership follows the outcome (v0.2) --------------------------------------------------------
+def test_live_entry_without_creator_is_an_error():
+    findings = check(reg(entry(creator="")), today=TODAY)
+    assert "P6-creator-required" in rules_of(findings) and has_errors(findings)
+
+
+def test_creator_may_differ_from_owner():
+    # The creator is provenance. Accountability sits with the owner, which resolves in CODEOWNERS.
+    rules = parse_codeowners("/agents/ @team")
+    assert check(reg(entry(creator="@alice", owner="@team", path="agents/a1/")), rules, today=TODAY) == []
+
+
+# kill criteria (v0.2) ------------------------------------------------------------------------
+def test_active_entry_without_kill_criterion_is_an_error():
+    findings = check(reg(without(entry(), "kill_criterion")), today=TODAY)
+    assert "P7-kill-criterion" in rules_of(findings) and has_errors(findings)
+
+
+def test_proposed_entry_may_omit_kill_criterion():
+    assert check(reg(without(entry(state="proposed"), "kill_criterion")), today=TODAY) == []
+
+
+def test_incomplete_kill_criterion_is_rejected():
+    incomplete = {k: v for k, v in KILL.items() if k != "action"}
+    with pytest.raises(RegistryError):
+        reg(entry(kill_criterion=incomplete))
+
+
+def test_kill_criterion_rejects_bad_comparator():
+    with pytest.raises(RegistryError):
+        reg(entry(kill_criterion={**KILL, "comparator": "!="}))
+
+
+def test_kill_criterion_rejects_bad_action():
+    with pytest.raises(RegistryError):
+        reg(entry(kill_criterion={**KILL, "action": "ignore"}))
+
+
+def test_overdue_kill_review_warns_within_grace():
+    overdue = {**KILL, "review_by": "2026-10-01"}  # 6 days late
+    findings = check(reg(entry(kill_criterion=overdue)), today=TODAY, kill_grace_days=30)
+    assert "P8-kill-review-overdue" in rules_of(findings) and not has_errors(findings)
+
+
+def test_overdue_kill_review_fails_beyond_grace():
+    overdue = {**KILL, "review_by": "2026-08-01"}  # 67 days late
+    findings = check(reg(entry(kill_criterion=overdue)), today=TODAY, kill_grace_days=30)
+    assert "P8-kill-review-overdue" in rules_of(findings) and has_errors(findings)
 
 
 # triage -------------------------------------------------------------------------------------
