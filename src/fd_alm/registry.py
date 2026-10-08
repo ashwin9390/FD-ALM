@@ -20,6 +20,10 @@ RISKS = ("clear", "complicated", "complex", "chaotic")  # Cynefin domains
 PRIORITIES = ("must", "should", "could", "wont")  # MoSCoW
 STATES = ("proposed", "approved", "active", "deprecated", "retired")
 
+KILL_CRITERION_FIELDS = {"metric", "threshold", "comparator", "window", "action", "review_by"}
+VALID_COMPARATORS = {"<", ">", "<=", ">="}
+VALID_ACTIONS = {"deprecate", "retire", "notify"}
+
 
 class RegistryError(ValueError):
     """Raised when a registry file is malformed."""
@@ -55,6 +59,27 @@ def _as_date(value: Any, entry_id: str) -> date | None:
         raise RegistryError(f"{entry_id}: last_used must be YYYY-MM-DD, got {value!r}") from exc
 
 
+def _validate_kill_criterion(raw: Any, entry_id: str) -> dict[str, Any] | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise RegistryError(f"{entry_id}: kill_criterion must be a mapping")
+
+    missing = KILL_CRITERION_FIELDS - set(raw.keys())
+    if missing:
+        raise RegistryError(f"{entry_id}: kill_criterion is missing required fields: {sorted(missing)}")
+
+    comparator = raw.get("comparator")
+    if comparator not in VALID_COMPARATORS:
+        raise RegistryError(f"{entry_id}: invalid kill_criterion comparator {comparator!r}")
+
+    action = raw.get("action")
+    if action not in VALID_ACTIONS:
+        raise RegistryError(f"{entry_id}: invalid kill_criterion action {action!r}")
+
+    return dict(raw)
+
+
 def _parse_entry(raw: dict) -> Entry:
     if not isinstance(raw, dict):
         raise RegistryError(f"entry must be a mapping, got {type(raw).__name__}")
@@ -77,9 +102,7 @@ def _parse_entry(raw: dict) -> Entry:
     if not isinstance(permissions, list):
         raise RegistryError(f"{eid}: permissions must be a list")
 
-    kill_criterion = raw.get("kill_criterion")
-    if kill_criterion is not None and not isinstance(kill_criterion, dict):
-        raise RegistryError(f"{eid}: kill_criterion must be a mapping")
+    kill_criterion = _validate_kill_criterion(raw.get("kill_criterion"), eid)
 
     return Entry(
         id=eid,
