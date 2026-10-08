@@ -33,6 +33,7 @@ def check(
     codeowners: list[Rule] | None = None,
     today: date | None = None,
     max_idle_days: int = 90,
+    kill_grace_days: int = 30,
 ) -> list[Finding]:
     """Run all policies. Policies are plain, readable rules; see docs/policies.md."""
     today = today or date.today()
@@ -81,8 +82,38 @@ def check(
                     Finding("P5-stale", WARNING, e.id,
                             f"unused for {idle} days (limit {max_idle_days}); consider deprecating")
                 )
+
+        # P6: live entries must declare their creator for provenance tracking.
+        if live and not e.creator:
+            findings.append(Finding("P6-creator-required", ERROR, e.id, "live entry has no creator"))
+
+        # P7: a live entry needs a declared kill criterion with concrete exit conditions.
+        if live and e.kill_criterion is None:
+            findings.append(Finding("P7-kill-criterion", ERROR, e.id, "live entry has no kill criterion"))
+
+        # P8: kill reviews must happen on time; a grace period allows warnings before failures.
+        if live and e.kill_criterion is not None:
+            review_by = e.kill_criterion.get("review_by")
+            if review_by is not None:
+                try:
+                    review_date = date.fromisoformat(str(review_by))
+                except ValueError:
+                    review_date = None
+                if review_date is not None:
+                    overdue_days = (today - review_date).days
+                    if overdue_days > 0:
+                        severity = WARNING if overdue_days <= kill_grace_days else ERROR
+                        findings.append(
+                            Finding(
+                                "P8-kill-review-overdue",
+                                severity,
+                                e.id,
+                                f"kill review was due on {review_date.isoformat()} ({overdue_days} day(s) overdue)",
+                            )
+                        )
     return findings
 
 
 def has_errors(findings: list[Finding]) -> bool:
     return any(f.severity == ERROR for f in findings)
+
