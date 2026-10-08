@@ -13,7 +13,14 @@
           "id": { "type": "string" },
           "kind": { "enum": ["agent", "skill", "mcp_server"] },
           "name": { "type": "string" },
-          "owner": { "type": "string" },
+          "creator": {
+            "type": "string",
+            "description": "Who built or configured the entry. Provenance only; does not carry accountability."
+          },
+          "owner": {
+            "type": "string",
+            "description": "Team or person who answers for the entry's output in production. Must resolve in CODEOWNERS."
+          },
           "path": { "type": "string" },
           "purpose": { "type": "string" },
           "risk": { "enum": ["clear", "complicated", "complex", "chaotic"] },
@@ -22,7 +29,21 @@
           "permissions": { "type": "array", "items": { "type": "string" } },
           "justification": { "type": "string" },
           "approved_by": { "type": "string" },
-          "last_used": { "type": "string", "format": "date" }
+          "last_used": { "type": "string", "format": "date" },
+          "kill_criterion": {
+            "type": "object",
+            "description": "Measurable condition under which the entry is deprecated or retired, plus the date someone must re-confirm it.",
+            "required": ["metric", "threshold", "comparator", "action", "review_by"],
+            "properties": {
+              "metric": { "type": "string", "description": "For example review_hours_per_change, ai_cycle_time_days, rejection_rate." },
+              "threshold": { "type": "number" },
+              "comparator": { "enum": [">", ">=", "<", "<="] },
+              "window": { "type": "integer", "minimum": 1, "description": "Consecutive periods the breach must persist. Default 1." },
+              "action": { "enum": ["deprecate", "retire", "escalate"] },
+              "review_by": { "type": "string", "format": "date" }
+            },
+            "additionalProperties": false
+          }
         },
         "additionalProperties": false
       }
