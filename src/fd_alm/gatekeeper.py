@@ -53,7 +53,7 @@ def check(
             elif e.owner not in repo_owners:
                 findings.append(
                     Finding("P1b-codeowners", ERROR, e.id,
-                            f"owner {e.owner} is not a CODEOWNER of {e.path} (found: {', '.join(repo_owners)})")
+                            f"owner {e.owner} is not a CODEOWNERS of {e.path} (found: {', '.join(repo_owners)})")
                 )
 
         # P2 (Cynefin): complex/chaotic work needs a named human approver before it goes live.
