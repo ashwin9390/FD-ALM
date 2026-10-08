@@ -6,10 +6,18 @@ entries:
     purpose: Suggest review comments on pull requests
     owner: "@platform-team"
     path: agents/code-review/
+    creator: "@platform"
     risk: complicated        # Cynefin: clear | complicated | complex | chaotic
     priority: should         # MoSCoW: must | should | could | wont
     state: active            # proposed | approved | active | deprecated | retired
     permissions: ["read:repo", "comment:pull_request"]
+    kill_criterion:
+      metric: review_hours_per_change
+      threshold: 0.5
+      comparator: ">"
+      window: 2
+      action: deprecate
+      review_by: "2027-01-31"
     last_used: 2026-09-30
 
   - id: agent-dependency-bump
@@ -18,10 +26,18 @@ entries:
     purpose: Open pull requests that update dependencies
     owner: "@platform-team"
     path: agents/dependency-bump/
+    creator: "@platform"
     risk: clear
     priority: could
     state: active
     permissions: ["read:repo", "write:branch"]
+    kill_criterion:
+      metric: review_hours_per_change
+      threshold: 0.5
+      comparator: ">"
+      window: 2
+      action: deprecate
+      review_by: "2027-02-01"
     last_used: 2026-10-01
 
   - id: agent-refactor
@@ -30,11 +46,19 @@ entries:
     purpose: Propose multi-file refactors
     owner: "@backend-team"
     path: agents/refactor/
+    creator: "@backend"
     risk: complex
     priority: should
     state: active
     approved_by: "@jane-doe"   # complex risk needs a named human approver
     permissions: ["read:repo", "write:branch"]
+    kill_criterion:
+      metric: review_hours_per_change
+      threshold: 0.5
+      comparator: ">"
+      window: 2
+      action: deprecate
+      review_by: "2027-02-15"
     last_used: 2026-09-28
 
   - id: mcp-issue-tracker
@@ -43,11 +67,19 @@ entries:
     purpose: Lets agents read and update tickets
     owner: "@platform-team"
     path: mcp/issue-tracker/
+    creator: "@platform"
     risk: complicated
     priority: should
     state: active
     permissions: ["tickets:*"]
     justification: Agents must read, create and transition tickets across projects.
+    kill_criterion:
+      metric: incident_count
+      threshold: 0.1
+      comparator: "<"
+      window: 1
+      action: retire
+      review_by: "2027-01-01"
     last_used: 2026-10-02
 
   - id: skill-release-notes
@@ -56,8 +88,16 @@ entries:
     purpose: Draft release notes from merged pull requests
     owner: "@docs-team"
     path: skills/release-notes/
+    creator: "@docs"
     risk: clear
     priority: could
     state: active
     permissions: ["read:repo"]
+    kill_criterion:
+      metric: review_hours_per_change
+      threshold: 0.5
+      comparator: ">"
+      window: 2
+      action: deprecate
+      review_by: "2027-03-01"
     last_used: 2026-04-01     # stale: the gatekeeper warns and suggests deprecating
