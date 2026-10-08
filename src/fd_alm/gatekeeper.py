@@ -116,4 +116,3 @@ def check(
 
 def has_errors(findings: list[Finding]) -> bool:
     return any(f.severity == ERROR for f in findings)
-

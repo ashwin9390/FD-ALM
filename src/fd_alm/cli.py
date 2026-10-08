@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import date
 
 from . import __title__, __version__
 from .codeowners import load_codeowners
@@ -12,10 +13,22 @@ from .registry import RegistryError, load_registry
 from .triage import load_changes, triage
 
 
+def _parse_date(value: str | None) -> date | None:
+    if value is None:
+        return None
+    return date.fromisoformat(value)
+
+
 def _cmd_check(args: argparse.Namespace) -> int:
     entries = load_registry(args.registry)
     rules = load_codeowners(args.codeowners) if args.codeowners else None
-    findings = check(entries, rules, max_idle_days=args.max_idle_days)
+    findings = check(
+        entries,
+        rules,
+        today=_parse_date(args.today),
+        max_idle_days=args.max_idle_days,
+        kill_grace_days=args.kill_grace_days,
+    )
     for finding in findings:
         print(finding)
     errors = sum(1 for f in findings if f.severity == "error")
@@ -51,6 +64,8 @@ def main(argv: list[str] | None = None) -> int:
     p_check.add_argument("registry")
     p_check.add_argument("--codeowners", help="path to a CODEOWNERS file")
     p_check.add_argument("--max-idle-days", type=int, default=90)
+    p_check.add_argument("--kill-grace-days", type=int, default=30)
+    p_check.add_argument("--today", help="override the evaluation date as ISO YYYY-MM-DD")
     p_check.set_defaults(func=_cmd_check)
 
     p_triage = sub.add_parser("triage", help="order agent-authored changes for human review")
