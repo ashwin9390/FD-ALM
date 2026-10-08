@@ -1,15 +1,12 @@
-Here is the fully updated and accurate `README.md` file, matching all policies (P1–P8), CLI flags (`--max-idle-days`, `--kill-grace-days`), and module features:
-
-```markdown
 # FD-ALM: Framework-Driven Agent Lifecycle Management
 
-A governance layer for AI code agents, MCP servers and skills. It applies management frameworks (Cynefin, MoSCoW, RACI, Eisenhower, Pareto, Theory of Constraints, Wardley) as concrete controls: a **registry**, a **gatekeeper** and **review triage**, plus an **AI-era cycle-time metric**.
+A governance layer for AI code agents, MCP servers and skills. It applies management frameworks (Cynefin, MoSCoW, RACI, Eisenhower, Pareto, Theory of Constraints, Wardley) as concrete controls: a governance model for ownership, risk, review, and lifecycle decisions.
 
-> **Status: research concept with a starter implementation (v0.1).** No production deployment and no pilot data yet. Feedback and pilots welcome.
+> Status: research concept with a starter implementation (v0.1). No production deployment and no pilot data yet. Feedback and pilots welcome.
 
 ## Why
 
-Teams add agents, MCP servers and skills faster than anyone can track them. Production gets cheap, human review becomes the bottleneck, and nobody can say who owns what. Read the full idea in [docs/spec.md](docs/spec.md).
+Teams add agents, MCP servers and skills faster than anyone can track them. Production gets cheap, human review becomes the bottleneck, and nobody can say who owns what. Read the full idea in [docs/spec.md](docs/spec.md) and the policy rules in [docs/policies.md](docs/policies.md).
 
 ## Quick start
 
@@ -26,7 +23,6 @@ fd-alm triage examples/registry.yaml examples/changes.yaml
 fd-alm metrics examples/cycle_samples.csv
 
 pytest
-
 ```
 
 `check` exits with code 1 when a policy error is found, so it can gate a pull request in CI.
@@ -46,7 +42,7 @@ pytest
 
 ## Repository layout
 
-```
+```text
 .
 ├── README.md
 ├── LICENSE              Apache-2.0 (code)
@@ -74,7 +70,6 @@ pytest
 ├── tests/
 │   └── test_fd_alm.py
 └── .github/workflows/ci.yml
-
 ```
 
 ## Roadmap
@@ -94,8 +89,7 @@ If you run agents, MCP servers or skills at scale, which control would you try f
 
 | Part | License |
 | --- | --- |
-| Source code (`src/`, `tests/`, `examples/`, `.github/`) | [Apache-2.0](https://www.google.com/search?q=LICENSE) |
-| Documentation and specification (`README.md`, `docs/`) | [CC BY 4.0](https://www.google.com/search?q=LICENSE-docs) |
+| Source code (`src/`, `tests/`, `examples/`, `.github/`) | [Apache License 2.0](./LICENSE) |
+| Documentation and specification (`README.md`, `docs/`) | [Creative Commons Attribution 4.0 International](./LICENSE-docs) |
 
-Copyright 2026 Ashwin H ([github.com/ashwin9390](https://www.google.com/search?q=https://github.com/ashwin9390)). See [NOTICE](https://www.google.com/search?q=NOTICE).
-
+Copyright © 2026 Ashwin H. See [NOTICE](./NOTICE).
