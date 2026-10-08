@@ -1,71 +1,64 @@
-"""Review triage: route agent-authored changes to human reviewers by risk and urgency.
+"""AI-era cycle time and process efficiency.
 
-Eisenhower quadrants:
-  important = the authoring agent is high risk (complex/chaotic) or unregistered
-  urgent    = the change is flagged urgent
+    cycle time = AI processing time + queue time + human review time
+
+Process efficiency = value-adding time / total cycle time. By default, AI processing and
+human review count as value-adding (work is happening) and queue time does not (waiting).
+Change `VALUE_ADDING` if your team defines it differently.
 """
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
 from pathlib import Path
+from statistics import median
 
-import yaml
-
-from .registry import Entry
-
-HIGH_RISK = {"complex", "chaotic"}
-
-LANES = {
-    (True, True): ("Q1", "review now"),
-    (True, False): ("Q2", "schedule review"),
-    (False, True): ("Q3", "fast lane"),
-    (False, False): ("Q4", "batch review"),
-}
-ORDER = {"Q1": 0, "Q2": 1, "Q3": 2, "Q4": 3}
+VALUE_ADDING = ("ai_s", "review_s")
 
 
 @dataclass(frozen=True)
-class Change:
-    id: str
-    title: str
-    agent: str
-    urgent: bool = False
-    lines_changed: int = 0
+class Sample:
+    ai_s: float
+    queue_s: float
+    review_s: float
+
+    @property
+    def cycle_s(self) -> float:
+        return self.ai_s + self.queue_s + self.review_s
+
+    @property
+    def efficiency(self) -> float:
+        total = self.cycle_s
+        if total == 0:
+            return 0.0
+        return sum(getattr(self, name) for name in VALUE_ADDING) / total
 
 
-@dataclass(frozen=True)
-class Triaged:
-    change: Change
-    quadrant: str
-    lane: str
-    reason: str
+def load_samples(path: str | Path) -> list[Sample]:
+    with open(path, newline="", encoding="utf-8") as handle:
+        return [
+            Sample(float(r["ai_s"]), float(r["queue_s"]), float(r["review_s"]))
+            for r in csv.DictReader(handle)
+        ]
 
 
-def load_changes(path: str | Path) -> list[Change]:
-    data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
-    return [
-        Change(
-            id=str(c["id"]),
-            title=str(c.get("title", "")),
-            agent=str(c["agent"]),
-            urgent=bool(c.get("urgent", False)),
-            lines_changed=int(c.get("lines_changed", 0)),
-        )
-        for c in data.get("changes", [])
-    ]
+def summarize(samples: list[Sample]) -> dict[str, float]:
+    if not samples:
+        raise ValueError("no samples")
+    return {
+        "n": len(samples),
+        "median_cycle_s": median(s.cycle_s for s in samples),
+        "median_ai_s": median(s.ai_s for s in samples),
+        "median_queue_s": median(s.queue_s for s in samples),
+        "median_review_s": median(s.review_s for s in samples),
+        "median_efficiency": median(s.efficiency for s in samples),
+    }
 
 
-def triage(changes: list[Change], entries: list[Entry]) -> list[Triaged]:
-    by_id = {e.id: e for e in entries}
-    result: list[Triaged] = []
-    for c in changes:
-        entry = by_id.get(c.agent)
-        if entry is None:
-            important, reason = True, "unregistered agent"
-        else:
-            important = entry.risk in HIGH_RISK
-            reason = f"agent risk '{entry.risk}'"
-        quadrant, lane = LANES[(important, c.urgent)]
-        result.append(Triaged(c, quadrant, lane, reason))
-    # Review is the constraint, so order the queue: most important and urgent first, small changes first.
-    return sorted(result, key=lambda t: (ORDER[t.quadrant], t.change.lines_changed))
+def compare(before: list[Sample], after: list[Sample]) -> dict[str, float]:
+    """Relative change in medians (negative = faster). Review is the constraint to watch."""
+    b, a = summarize(before), summarize(after)
+    return {
+        key: (a[key] - b[key]) / b[key] if b[key] else 0.0
+        for key in ("median_cycle_s", "median_ai_s", "median_queue_s", "median_review_s")
+    }

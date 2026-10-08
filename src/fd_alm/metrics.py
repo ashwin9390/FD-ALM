@@ -1,64 +1,89 @@
-"""AI-era cycle time and process efficiency.
-
-    cycle time = AI processing time + queue time + human review time
-
-Process efficiency = value-adding time / total cycle time. By default, AI processing and
-human review count as value-adding (work is happening) and queue time does not (waiting).
-Change `VALUE_ADDING` if your team defines it differently.
-"""
+"""Command line: fd-alm check | triage | metrics."""
 from __future__ import annotations
 
-import csv
-from dataclasses import dataclass
-from pathlib import Path
-from statistics import median
+import argparse
+import sys
+from datetime import date
 
-VALUE_ADDING = ("ai_s", "review_s")
-
-
-@dataclass(frozen=True)
-class Sample:
-    ai_s: float
-    queue_s: float
-    review_s: float
-
-    @property
-    def cycle_s(self) -> float:
-        return self.ai_s + self.queue_s + self.review_s
-
-    @property
-    def efficiency(self) -> float:
-        total = self.cycle_s
-        if total == 0:
-            return 0.0
-        return sum(getattr(self, name) for name in VALUE_ADDING) / total
+from . import __title__, __version__
+from .codeowners import load_codeowners
+from .gatekeeper import check, has_errors
+from .metrics import load_samples, summarize
+from .registry import RegistryError, load_registry
+from .triage import load_changes, triage
 
 
-def load_samples(path: str | Path) -> list[Sample]:
-    with open(path, newline="", encoding="utf-8") as handle:
-        return [
-            Sample(float(r["ai_s"]), float(r["queue_s"]), float(r["review_s"]))
-            for r in csv.DictReader(handle)
-        ]
+def _parse_date(value: str | None) -> date | None:
+    if value is None:
+        return None
+    return date.fromisoformat(value)
 
 
-def summarize(samples: list[Sample]) -> dict[str, float]:
-    if not samples:
-        raise ValueError("no samples")
-    return {
-        "n": len(samples),
-        "median_cycle_s": median(s.cycle_s for s in samples),
-        "median_ai_s": median(s.ai_s for s in samples),
-        "median_queue_s": median(s.queue_s for s in samples),
-        "median_review_s": median(s.review_s for s in samples),
-        "median_efficiency": median(s.efficiency for s in samples),
-    }
+def _cmd_check(args: argparse.Namespace) -> int:
+    entries = load_registry(args.registry)
+    rules = load_codeowners(args.codeowners) if args.codeowners else None
+    findings = check(
+        entries,
+        rules,
+        today=_parse_date(args.today),
+        max_idle_days=args.max_idle_days,
+        kill_grace_days=args.kill_grace_days,
+    )
+    for finding in findings:
+        print(finding)
+    errors = sum(1 for f in findings if f.severity == "error")
+    print(f"{len(entries)} entries checked: {errors} error(s), {len(findings) - errors} warning(s)")
+    return 1 if has_errors(findings) else 0
 
 
-def compare(before: list[Sample], after: list[Sample]) -> dict[str, float]:
-    """Relative change in medians (negative = faster). Review is the constraint to watch."""
-    b, a = summarize(before), summarize(after)
-    return {
-        key: (a[key] - b[key]) / b[key] if b[key] else 0.0
-        for key in ("median_cycle_s", "median_ai_s", "median_queue_s", "median_review_s")
-    }
+def _cmd_triage(args: argparse.Namespace) -> int:
+    entries = load_registry(args.registry)
+    queue = triage(load_changes(args.changes), entries)
+    for item in queue:
+        c = item.change
+        print(f"{item.quadrant} {item.lane:<16} {c.id}  {c.title}  ({item.reason}, {c.lines_changed} lines)")
+    return 0
+
+
+def _cmd_metrics(args: argparse.Namespace) -> int:
+    summary = summarize(load_samples(args.samples))
+    for key, value in summary.items():
+        print(f"{key}: {value:.2f}" if isinstance(value, float) else f"{key}: {value}")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="fd-alm",
+        description=f"{__title__}: Framework-Driven Agent Lifecycle Management",
+    )
+    parser.add_argument("--version", action="version", version=__version__)
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_check = sub.add_parser("check", help="run gatekeeper policies on a registry file")
+    p_check.add_argument("registry")
+    p_check.add_argument("--codeowners", help="path to a CODEOWNERS file")
+    p_check.add_argument("--max-idle-days", type=int, default=90)
+    p_check.add_argument("--kill-grace-days", type=int, default=30)
+    p_check.add_argument("--today", help="override the evaluation date as ISO YYYY-MM-DD")
+    p_check.set_defaults(func=_cmd_check)
+
+    p_triage = sub.add_parser("triage", help="order agent-authored changes for human review")
+    p_triage.add_argument("registry")
+    p_triage.add_argument("changes")
+    p_triage.set_defaults(func=_cmd_triage)
+
+    p_metrics = sub.add_parser("metrics", help="summarize AI-era cycle time from a CSV (ai_s,queue_s,review_s)")
+    p_metrics.add_argument("samples")
+    p_metrics.set_defaults(func=_cmd_metrics)
+
+    args = parser.parse_args(argv)
+    try:
+        return args.func(args)
+    except (RegistryError, FileNotFoundError, KeyError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

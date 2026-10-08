@@ -1,173 +1,118 @@
-"""Registry: the inventory of agents, skills and MCP servers.
-
-Each entry carries the controls the framework mapping needs:
-  risk      -> Cynefin domain (how predictable the task is)
-  priority  -> MoSCoW (admission priority)
-  owner     -> RACI (accountable owner)
-  state     -> lifecycle (proposed -> approved -> active -> deprecated -> retired)
-"""
+"""Gatekeeper: policy checks that run where changes already pass (CI)."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
-from pathlib import Path
 
-import yaml
+from .codeowners import Rule, owners_for
+from .registry import Entry
 
-KINDS = {"agent", "skill", "mcp_server"}
-RISKS = ("clear", "complicated", "complex", "chaotic")  # Cynefin domains
-PRIORITIES = ("must", "should", "could", "wont")  # MoSCoW
-STATES = ("proposed", "approved", "active", "deprecated", "retired")
-KILL_COMPARATORS = {">", ">=", "<", "<=", "=="}
-KILL_ACTIONS = {"deprecate", "retire", "archive"}
+ERROR = "error"
+WARNING = "warning"
+HIGH_RISK = {"complex", "chaotic"}
+LIVE_STATES = {"approved", "active"}
 
 
-class RegistryError(ValueError):
-    """Raised when a registry file is malformed."""
+@dataclass(frozen=True)
+class Finding:
+    rule: str
+    severity: str
+    entry_id: str
+    message: str
+
+    def __str__(self) -> str:
+        return f"[{self.severity.upper()}] {self.rule} {self.entry_id}: {self.message}"
 
 
-@dataclass
-class Entry:
-    id: str
-    kind: str
-    name: str
-    owner: str = ""
-    path: str = ""  # where the agent/skill/tool config lives in the repo
-    purpose: str = ""
-    risk: str = "complicated"
-    priority: str = "could"
-    state: str = "proposed"
-    permissions: list[str] = field(default_factory=list)
-    justification: str = ""
-    approved_by: str = ""
-    creator: str = ""
-    kill_criterion: dict[str, object] | None = None
-    last_used: date | None = None
+def _is_broad(permission: str) -> bool:
+    return "*" in permission
 
 
-def _as_date(value, entry_id: str) -> date | None:
-    if value in (None, ""):
-        return None
-    if isinstance(value, date):
-        return value
-    try:
-        return date.fromisoformat(str(value))
-    except ValueError as exc:
-        raise RegistryError(f"{entry_id}: last_used must be YYYY-MM-DD, got {value!r}") from exc
+def check(
+    entries: list[Entry],
+    codeowners: list[Rule] | None = None,
+    today: date | None = None,
+    max_idle_days: int = 90,
+    kill_grace_days: int = 30,
+) -> list[Finding]:
+    """Run all policies. Policies are plain, readable rules; see docs/policies.md."""
+    today = today or date.today()
+    findings: list[Finding] = []
+    for e in entries:
+        live = e.state in LIVE_STATES
+
+        # P1 (RACI): no owner, no admission. A live entry needs an accountable owner.
+        if live and not e.owner:
+            findings.append(Finding("P1-owner-required", ERROR, e.id, "live entry has no owner"))
+
+        # P1b: the owner must agree with the repository's CODEOWNERS for the entry's path.
+        if codeowners is not None and e.path and e.owner:
+            repo_owners = owners_for(e.path, codeowners)
+            if not repo_owners:
+                findings.append(Finding("P1b-codeowners", WARNING, e.id, f"no CODEOWNERS rule covers {e.path}"))
+            elif e.owner not in repo_owners:
+                findings.append(
+                    Finding("P1b-codeowners", ERROR, e.id,
+                            f"owner {e.owner} is not a CODEOWNER of {e.path} (found: {', '.join(repo_owners)})")
+                )
+
+        # P2 (Cynefin): complex/chaotic work needs a named human approver before it goes live.
+        if live and e.risk in HIGH_RISK and not e.approved_by:
+            findings.append(
+                Finding("P2-human-approval", ERROR, e.id, f"risk '{e.risk}' requires approved_by before going live")
+            )
+
+        # P3: broad permissions need a written justification.
+        broad = [p for p in e.permissions if _is_broad(p)]
+        if live and broad and not e.justification:
+            findings.append(
+                Finding("P3-broad-permissions", ERROR, e.id,
+                        f"wildcard permissions {broad} need a justification")
+            )
+
+        # P4 (MoSCoW): 'wont' items must not be live.
+        if live and e.priority == "wont":
+            findings.append(Finding("P4-priority", ERROR, e.id, "priority 'wont' but entry is live"))
+
+        # P5 (lifecycle): active entries unused for a long time are candidates for deprecation.
+        if e.state == "active" and e.last_used is not None:
+            idle = (today - e.last_used).days
+            if idle > max_idle_days:
+                findings.append(
+                    Finding("P5-stale", WARNING, e.id,
+                            f"unused for {idle} days (limit {max_idle_days}); consider deprecating")
+                )
+
+        # P6: live entries must declare their creator for provenance tracking.
+        if live and not e.creator:
+            findings.append(Finding("P6-creator-required", ERROR, e.id, "live entry has no creator"))
+
+        # P7: a live entry needs a declared kill criterion with concrete exit conditions.
+        if live and e.kill_criterion is None:
+            findings.append(Finding("P7-kill-criterion", ERROR, e.id, "live entry has no kill criterion"))
+
+        # P8: kill reviews must happen on time; a grace period allows warnings before failures.
+        if live and e.kill_criterion is not None:
+            review_by = e.kill_criterion.get("review_by")
+            if review_by is not None:
+                try:
+                    review_date = date.fromisoformat(str(review_by))
+                except ValueError:
+                    review_date = None
+                if review_date is not None:
+                    overdue_days = (today - review_date).days
+                    if overdue_days > 0:
+                        severity = WARNING if overdue_days <= kill_grace_days else ERROR
+                        findings.append(
+                            Finding(
+                                "P8-kill-review-overdue",
+                                severity,
+                                e.id,
+                                f"kill review was due on {review_date.isoformat()} ({overdue_days} day(s) overdue)",
+                            )
+                        )
+    return findings
 
 
-def _parse_kill_criterion(raw: object, entry_id: str) -> dict[str, object] | None:
-    if raw in (None, ""):
-        return None
-    if not isinstance(raw, dict):
-        raise RegistryError(f"{entry_id}: kill_criterion must be a mapping")
-
-    required = ("metric", "threshold", "comparator", "window", "action", "review_by")
-    missing = [name for name in required if name not in raw or raw[name] in (None, "")]
-    if missing:
-        raise RegistryError(f"{entry_id}: kill_criterion is missing required fields: {', '.join(missing)}")
-
-    comparator = str(raw["comparator"])
-    if comparator not in KILL_COMPARATORS:
-        raise RegistryError(
-            f"{entry_id}: kill_criterion comparator must be one of {sorted(KILL_COMPARATORS)}, got {comparator!r}"
-        )
-
-    action = str(raw["action"]).lower()
-    if action not in KILL_ACTIONS:
-        raise RegistryError(
-            f"{entry_id}: kill_criterion action must be one of {sorted(KILL_ACTIONS)}, got {action!r}"
-        )
-
-    threshold = raw["threshold"]
-    if isinstance(threshold, bool) or not isinstance(threshold, (int, float)):
-        raise RegistryError(f"{entry_id}: kill_criterion threshold must be numeric, got {threshold!r}")
-
-    window = raw["window"]
-    if isinstance(window, bool) or not isinstance(window, int):
-        raise RegistryError(f"{entry_id}: kill_criterion window must be an integer, got {window!r}")
-    if window <= 0:
-        raise RegistryError(f"{entry_id}: kill_criterion window must be positive, got {window!r}")
-
-    review_by = raw["review_by"]
-    try:
-        date.fromisoformat(str(review_by))
-    except ValueError as exc:
-        raise RegistryError(f"{entry_id}: kill_criterion review_by must be YYYY-MM-DD, got {review_by!r}") from exc
-
-    return {
-        "metric": str(raw["metric"]),
-        "threshold": threshold,
-        "comparator": comparator,
-        "window": window,
-        "action": action,
-        "review_by": str(review_by),
-    }
-
-
-def _parse_entry(raw: dict) -> Entry:
-    if not isinstance(raw, dict):
-        raise RegistryError(f"entry must be a mapping, got {type(raw).__name__}")
-    for required in ("id", "kind", "name"):
-        if not raw.get(required):
-            raise RegistryError(f"entry is missing required field {required!r}: {raw}")
-    eid = str(raw["id"])
-    if raw["kind"] not in KINDS:
-        raise RegistryError(f"{eid}: kind must be one of {sorted(KINDS)}, got {raw['kind']!r}")
-    risk = raw.get("risk", "complicated")
-    if risk not in RISKS:
-        raise RegistryError(f"{eid}: risk must be one of {list(RISKS)}, got {risk!r}")
-    priority = raw.get("priority", "could")
-    if priority not in PRIORITIES:
-        raise RegistryError(f"{eid}: priority must be one of {list(PRIORITIES)}, got {priority!r}")
-    state = raw.get("state", "proposed")
-    if state not in STATES:
-        raise RegistryError(f"{eid}: state must be one of {list(STATES)}, got {state!r}")
-    permissions = raw.get("permissions") or []
-    if not isinstance(permissions, list):
-        raise RegistryError(f"{eid}: permissions must be a list")
-    return Entry(
-        id=eid,
-        kind=raw["kind"],
-        name=str(raw["name"]),
-        owner=str(raw.get("owner") or ""),
-        path=str(raw.get("path") or ""),
-        purpose=str(raw.get("purpose") or ""),
-        risk=risk,
-        priority=priority,
-        state=state,
-        permissions=[str(p) for p in permissions],
-        justification=str(raw.get("justification") or ""),
-        approved_by=str(raw.get("approved_by") or ""),
-        creator=str(raw.get("creator") or ""),
-        kill_criterion=_parse_kill_criterion(raw.get("kill_criterion"), eid),
-        last_used=_as_date(raw.get("last_used"), eid),
-    )
-
-
-def parse_registry(data: dict) -> list[Entry]:
-    """Parse already-loaded registry data (a mapping with an 'entries' list)."""
-    if not isinstance(data, dict) or "entries" not in data:
-        raise RegistryError("registry must be a mapping with an 'entries' list")
-    entries = [_parse_entry(raw) for raw in data["entries"] or []]
-    seen: set[str] = set()
-    for entry in entries:
-        if entry.id in seen:
-            raise RegistryError(f"duplicate entry id: {entry.id}")
-        seen.add(entry.id)
-    return entries
-
-
-def load_registry(path: str | Path) -> list[Entry]:
-    with open(path, encoding="utf-8") as handle:
-        return parse_registry(yaml.safe_load(handle))
-
-
-__all__ = [
-    "Entry",
-    "KILL_ACTIONS",
-    "KILL_COMPARATORS",
-    "RegistryError",
-    "load_registry",
-    "parse_registry",
-]
+def has_errors(findings: list[Finding]) -> bool:
+    return any(f.severity == ERROR for f in findings)
